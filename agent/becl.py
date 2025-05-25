@@ -51,7 +51,7 @@ class BECLAgent(DDPGAgent):
         # create actor and critic
         super().__init__(**kwargs)
 
-        # net
+        # net # NOTE: raw obs dim to "skill dim"
         self.becl = BECL(self.obs_dim - self.skill_dim,
                                            self.skill_dim,
                                            kwargs['hidden_dim']).to(kwargs['device'])
@@ -156,7 +156,7 @@ class BECLAgent(DDPGAgent):
 
             metrics.update(self.update_contrastive(next_obs, skill))
 
-            for _ in range(self.contrastive_update_rate - 1):
+            for _ in range(self.contrastive_update_rate - 1): # Q: why write like this? N aux update per policy update?
                 batch = next(replay_iter)
                 obs, action, reward, discount, next_obs, skill = utils.to_torch(batch, self.device)
                 obs = self.aug_and_encode(obs)
@@ -191,7 +191,7 @@ class BECLAgent(DDPGAgent):
         obs = torch.cat([obs, skill], dim=1)
         next_obs = torch.cat([next_obs, skill], dim=1)
 
-        # update critic
+        # update critic # Q: why detach 
         metrics.update(
             self.update_critic(obs.detach(), action, reward, discount,
                                next_obs.detach(), step))

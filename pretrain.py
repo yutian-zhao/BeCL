@@ -54,7 +54,7 @@ class Workspace:
         self.logger = Logger(self.work_dir,
                              use_tb=cfg.use_tb,
                              use_wandb=cfg.use_wandb)
-        # create envs
+        # create envs # TODO: change
         task = PRIMAL_TASKS[self.cfg.domain]
         self.train_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
                                   cfg.action_repeat, cfg.seed)
@@ -68,15 +68,15 @@ class Workspace:
                                 cfg.num_seed_frames // cfg.action_repeat,
                                 cfg.agent)
 
-        # get meta specs
+        # get meta specs # TODO: check
         meta_specs = self.agent.get_meta_specs()
-        # create replay buffer
+        # create replay buffer # TODO: no specs
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
                       specs.Array((1,), np.float32, 'reward'),
                       specs.Array((1,), np.float32, 'discount'))
 
-        # create data storage
+        # create data storage # TODO: no specs
         self.replay_storage = ReplayBufferStorage(data_specs, meta_specs,
                                                   self.work_dir / 'buffer')
 
@@ -126,7 +126,7 @@ class Workspace:
         meta = self.agent.init_meta()
         while eval_until_episode(episode):
             time_step = self.eval_env.reset()
-            self.video_recorder.init(self.eval_env, enabled=(episode == 0))
+            self.video_recorder.init(self.eval_env, enabled=(episode == 0)) # NOTE: only record eps 0?
             while not time_step.last():
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     action = self.agent.act(time_step.observation,
@@ -163,7 +163,7 @@ class Workspace:
         self.train_video_recorder.init(time_step.observation)
         metrics = None
         while train_until_step(self.global_step):
-            if time_step.last():
+            if time_step.last(): # NOTE: Should be the last step of the episode TODO: no such function
                 self._global_episode += 1
                 self.train_video_recorder.save(f'{self.global_frame}.mp4')
                 # wait until all the metrics schema is populated
@@ -205,7 +205,7 @@ class Workspace:
                                         self.global_step,
                                         eval_mode=False)
 
-            # try to update the agent
+            # try to update the agent # NOTE: Update after first 4000 steps
             if not seed_until_step(self.global_step):
                 metrics = self.agent.update(self.replay_iter, self.global_step)
                 self.logger.log_metrics(metrics, self.global_frame, ty='train')
