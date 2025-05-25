@@ -1,0 +1,13 @@
+termcolor
+git+git://github.com/deepmind/dm_control.git
+imageio
+imageio-ffmpeg
+hydra-core
+hydra-submitit-launcher
+ipdb
+yapf
+mujoco_py
+sklearn
+opencv-python
+wandb
+moviepy
