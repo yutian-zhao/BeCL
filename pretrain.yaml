@@ -12,13 +12,13 @@ action_repeat: 1 # set to 2 for pixels
 discount: 0.99
 # train settings
 num_train_frames: 2000010
-num_seed_frames: 4000
+num_seed_frames: 4000 # encoder update after first 4000 steps?
 # eval
 eval_every_frames: 10000
 num_eval_episodes: 10
 # snapshot
 snapshots: [100000, 500000, 1000000, 2000000]
-snapshot_dir: ../../../models/${obs_type}/${domain}/${agent.name}/${seed}
+snapshot_dir: ./models/${obs_type}/${domain}/${agent.name}/${seed} # ../../.
 # replay buffer
 replay_buffer_size: 1000000
 replay_buffer_num_workers: 4
@@ -44,7 +44,7 @@ hydra:
     subdir: ${hydra.job.num}
   launcher:
     timeout_min: 4300
-    cpus_per_task: 10
+    cpus_per_task: 12 # 10
     gpus_per_node: 1
     tasks_per_node: 1
     mem_gb: 160
