@@ -76,6 +76,7 @@ class BECLAgent(DDPGAgent):
         return meta
 
     def update_meta(self, meta, global_step, time_step, finetune=False):
+        # NOTE: skill changed every 50 steps. Should always be consistent with environment in this case 
         if global_step % self.update_skill_every_step == 0:
             return self.init_meta()
         return meta

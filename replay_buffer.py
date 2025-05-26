@@ -92,7 +92,7 @@ class ReplayBuffer(IterableDataset):
         self._nstep = nstep
         self._discount = discount
         self._fetch_every = fetch_every
-        self._samples_since_last_fetch = fetch_every
+        self._samples_since_last_fetch = fetch_every # NOTE:1000
         self._save_snapshot = save_snapshot
 
     def _sample_episode(self):
@@ -137,7 +137,7 @@ class ReplayBuffer(IterableDataset):
                 break
             if fetched_size + eps_len > self._max_size:
                 break
-            fetched_size += eps_len
+            fetched_size += eps_len # TODO: order
             if not self._store_episode(eps_fn):
                 break
 

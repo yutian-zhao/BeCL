@@ -68,13 +68,17 @@ class Workspace:
                                 cfg.num_seed_frames // cfg.action_repeat,
                                 cfg.agent)
 
-        # get meta specs # TODO: check
+        # get meta specs # TODO: (Array(shape=(16,), dtype=dtype('float32'), name='skill'),)
         meta_specs = self.agent.get_meta_specs()
         # create replay buffer # TODO: no specs
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
                       specs.Array((1,), np.float32, 'reward'),
                       specs.Array((1,), np.float32, 'discount'))
+        # NOTE: (Array(shape=(24,), dtype=dtype('float32'), name='observation'), 
+        # BoundedArray(shape=(6,), dtype=dtype('float32'), name='action', minimum=-1.0, maximum=1.0), 
+        # Array(shape=(1,), dtype=dtype('float32'), name='reward'), 
+        # Array(shape=(1,), dtype=dtype('float32'), name='discount'))
 
         # create data storage # TODO: no specs
         self.replay_storage = ReplayBufferStorage(data_specs, meta_specs,
@@ -182,7 +186,12 @@ class Workspace:
                         log('step', self.global_step)
 
                 # reset env
-                time_step = self.train_env.reset()
+                time_step = self.train_env.reset() 
+                # NOTE: ExtendedTimeStep(step_type=<StepType.FIRST: 0>, 
+                # reward=0.0, 
+                # discount=1.0, 
+                # observation=array([], dtype=float32), 
+                # action=array([0., 0., 0., 0., 0., 0.], dtype=float32)) 
                 meta = self.agent.init_meta()
                 self.replay_storage.add(time_step, meta)
                 self.train_video_recorder.init(time_step.observation)
