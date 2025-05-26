@@ -225,7 +225,7 @@ class DDPGAgent:
         if eval_mode:
             action = dist.mean
         else:
-            action = dist.sample(clip=None)
+            action = dist.sample(clip=None) # NOTE: Clip is None and action range is +- 1
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
         return action.cpu().numpy()[0]
@@ -235,8 +235,8 @@ class DDPGAgent:
 
         with torch.no_grad():
             stddev = utils.schedule(self.stddev_schedule, step)
-            dist = self.actor(next_obs, stddev)
-            next_action = dist.sample(clip=self.stddev_clip)
+            dist = self.actor(next_obs, stddev) # NOTE: std dev 0.2
+            next_action = dist.sample(clip=self.stddev_clip) # TODO clip to +- 0.3
             target_Q1, target_Q2 = self.critic_target(next_obs, next_action)
             target_V = torch.min(target_Q1, target_Q2)
             target_Q = reward + (discount * target_V)
@@ -270,7 +270,7 @@ class DDPGAgent:
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
-        actor_loss = -Q.mean()
+        actor_loss = -Q.mean() # why mean?
 
         # optimize actor
         self.actor_opt.zero_grad(set_to_none=True)
@@ -307,7 +307,7 @@ class DDPGAgent:
         if self.use_tb or self.use_wandb:
             metrics['batch_reward'] = reward.mean().item()
 
-        # update critic
+        # update critic # Q: why only update encoder via critic loss not via actor loss
         metrics.update(
             self.update_critic(obs, action, reward, discount, next_obs, step))
 

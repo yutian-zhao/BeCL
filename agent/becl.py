@@ -118,7 +118,7 @@ class BECLAgent(DDPGAgent):
         labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).long() #(b,b)
         labels = labels.to(self.device)
 
-        features = F.normalize(features, dim=1) #(b,c)
+        features = F.normalize(features, dim=1) #(b,c) # NOTE: normalize here
         similarity_matrix = torch.matmul(features, features.T) #(b,b)
         
         # discard the main diagonal from both: labels and similarities matrix
@@ -176,7 +176,7 @@ class BECLAgent(DDPGAgent):
 
             obs, action, extr_reward, discount, next_obs, skill = utils.to_torch(
                 batch, self.device)
-            obs = self.aug_and_encode(obs)
+            obs = self.aug_and_encode(obs) # TODO: not use BECL as encoder
             next_obs = self.aug_and_encode(next_obs)
             reward = extr_reward
 
@@ -191,7 +191,7 @@ class BECLAgent(DDPGAgent):
         obs = torch.cat([obs, skill], dim=1)
         next_obs = torch.cat([next_obs, skill], dim=1)
 
-        # update critic # Q: why detach 
+        # update critic # Q: why detach -> update encoder when update contrastive, but there are differences, i expect the final output of BECL as feature
         metrics.update(
             self.update_critic(obs.detach(), action, reward, discount,
                                next_obs.detach(), step))
