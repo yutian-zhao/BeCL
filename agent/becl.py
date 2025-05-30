@@ -177,14 +177,15 @@ class BECLAgent(DDPGAgent):
 
             obs, action, extr_reward, discount, next_obs, skill = utils.to_torch(
                 batch, self.device)
-            obs = self.aug_and_encode(obs) # TODO: not use BECL as encoder
+            obs = self.aug_and_encode(obs) # NOTE: aug and encode are both identity
+            # TODO: not use BECL as encoder
             next_obs = self.aug_and_encode(next_obs)
             reward = extr_reward
 
         if self.use_tb or self.use_wandb:
             metrics['batch_reward'] = reward.mean().item()
 
-        if not self.update_encoder:
+        if not self.update_encoder: # NOTE: update_encoder: true
             obs = obs.detach()
             next_obs = next_obs.detach()
 

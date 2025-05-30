@@ -14,12 +14,15 @@ import numpy as np
 import torch
 import wandb
 from dm_env import specs
+import gymnasium as gym
 
 import dmc
 import utils
 from logger import Logger
 from replay_buffer import ReplayBufferStorage, make_replay_loader
 from video import TrainVideoRecorder, VideoRecorder
+from dmc_wrapper import DMCWrapper
+import point_maze
 
 torch.backends.cudnn.benchmark = True
 
@@ -54,12 +57,15 @@ class Workspace:
         self.logger = Logger(self.work_dir,
                              use_tb=cfg.use_tb,
                              use_wandb=cfg.use_wandb)
-        # create envs # TODO: change
-        task = PRIMAL_TASKS[self.cfg.domain]
-        self.train_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
-                                  cfg.action_repeat, cfg.seed)
-        self.eval_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
-                                 cfg.action_repeat, cfg.seed)
+        # create envs # TODO: change # Q: any need to create two envs?
+        # task = PRIMAL_TASKS[self.cfg.domain]
+        # self.train_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
+        #                           cfg.action_repeat, cfg.seed)
+        # self.eval_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
+        #                          cfg.action_repeat, cfg.seed)
+
+        self.train_env = DMCWrapper(gym.make('point_maze', n=50, maze_type='square_a'))
+        self.eval_env = DMCWrapper(gym.make('point_maze', n=50, maze_type='square_a'))
 
         # create agent
         self.agent = make_agent(cfg.obs_type,
@@ -68,9 +74,9 @@ class Workspace:
                                 cfg.num_seed_frames // cfg.action_repeat,
                                 cfg.agent)
 
-        # get meta specs # TODO: (Array(shape=(16,), dtype=dtype('float32'), name='skill'),)
+        # get meta specs
         meta_specs = self.agent.get_meta_specs()
-        # create replay buffer # TODO: no specs
+        # create replay buffer
         data_specs = (self.train_env.observation_spec(),
                       self.train_env.action_spec(),
                       specs.Array((1,), np.float32, 'reward'),
@@ -79,8 +85,9 @@ class Workspace:
         # BoundedArray(shape=(6,), dtype=dtype('float32'), name='action', minimum=-1.0, maximum=1.0), 
         # Array(shape=(1,), dtype=dtype('float32'), name='reward'), 
         # Array(shape=(1,), dtype=dtype('float32'), name='discount'))
+        # NOTE: default reward is set to 1
 
-        # create data storage # TODO: no specs
+        # create data storage
         self.replay_storage = ReplayBufferStorage(data_specs, meta_specs,
                                                   self.work_dir / 'buffer')
 
@@ -100,7 +107,7 @@ class Workspace:
         self.train_video_recorder = TrainVideoRecorder(
             self.work_dir if cfg.save_train_video else None,
             camera_id=0 if 'quadruped' not in self.cfg.domain else 2,
-            use_wandb=self.cfg.use_wandb)
+            use_wandb=self.cfg.use_wandb) # NOTE: save_train_video = false
 
         self.timer = utils.Timer()
         self._global_step = 0
@@ -146,7 +153,7 @@ class Workspace:
             self.video_recorder.save(f'{self.global_frame}.mp4')
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
-            log('episode_reward', total_reward / episode)
+            log('episode_reward', total_reward / episode) # NOTE: average
             log('episode_length', step * self.cfg.action_repeat / episode)
             log('episode', self.global_episode)
             log('step', self.global_step)
@@ -158,7 +165,7 @@ class Workspace:
         seed_until_step = utils.Until(self.cfg.num_seed_frames,
                                       self.cfg.action_repeat)
         eval_every_step = utils.Every(self.cfg.eval_every_frames,
-                                      self.cfg.action_repeat)
+                                      self.cfg.action_repeat) # eval every cfg.eval_every_frames steps
 
         episode_step, episode_reward = 0, 0
         time_step = self.train_env.reset()
@@ -187,11 +194,6 @@ class Workspace:
 
                 # reset env
                 time_step = self.train_env.reset() 
-                # NOTE: ExtendedTimeStep(step_type=<StepType.FIRST: 0>, 
-                # reward=0.0, 
-                # discount=1.0, 
-                # observation=array([], dtype=float32), 
-                # action=array([0., 0., 0., 0., 0., 0.], dtype=float32)) 
                 meta = self.agent.init_meta()
                 self.replay_storage.add(time_step, meta)
                 self.train_video_recorder.init(time_step.observation)
@@ -204,17 +206,21 @@ class Workspace:
             if eval_every_step(self.global_step):
                 self.logger.log('eval_total_time', self.timer.total_time(),
                                 self.global_frame)
-                self.eval()
+                self.eval() # NOTE: call workspace eval function
 
+            # NOTE skill changed every self.update_skill_every_step steps.
+            # timestep not used
             meta = self.agent.update_meta(meta, self.global_step, time_step)
             # sample action
+            # NOTE: set to eval_mode and set back when exit
             with torch.no_grad(), utils.eval_mode(self.agent):
                 action = self.agent.act(time_step.observation,
                                         meta,
                                         self.global_step,
-                                        eval_mode=False)
+                                        eval_mode=False) # eval_mode: deterministic or stochastic
 
-            # try to update the agent # NOTE: Update after first 4000 steps
+            # try to update the agent 
+            # # NOTE: Update after first 4000 steps -> 2500
             if not seed_until_step(self.global_step):
                 metrics = self.agent.update(self.replay_iter, self.global_step)
                 self.logger.log_metrics(metrics, self.global_frame, ty='train')

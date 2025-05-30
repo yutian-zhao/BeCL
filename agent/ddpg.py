@@ -61,7 +61,7 @@ class Actor(nn.Module):
         h = self.trunk(obs)
 
         mu = self.policy(h)
-        mu = torch.tanh(mu)
+        mu = torch.tanh(mu) # NOTE: (-1,1)
         std = torch.ones_like(mu) * std
 
         dist = utils.TruncatedNormal(mu, std)

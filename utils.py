@@ -133,6 +133,7 @@ class TruncatedNormal(pyd.Normal):
         self.eps = eps
 
     def _clamp(self, x):
+        # NOTE: a custom differentiable clamp
         clamped_x = torch.clamp(x, self.low + self.eps, self.high - self.eps)
         x = x - x.detach() + clamped_x.detach()
         return x
@@ -144,9 +145,9 @@ class TruncatedNormal(pyd.Normal):
                                device=self.loc.device)
         eps *= self.scale
         if clip is not None:
-            eps = torch.clamp(eps, -clip, clip)
+            eps = torch.clamp(eps, -clip, clip) # NOTE: clipped normal distribution, don't want the noise added to the mean larger than 0.3
         x = self.loc + eps
-        return self._clamp(x)
+        return self._clamp(x) # NOTE: clip to valid range
 
 
 class TanhTransform(pyd.transforms.Transform):

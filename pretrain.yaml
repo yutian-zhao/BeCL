@@ -5,13 +5,13 @@ defaults:
 # mode
 reward_free: true
 # task settings
-domain: walker # primal task will be infered in runtime
+domain: pmaze # primal task will be infered in runtime
 obs_type: states # [states, pixels]
 frame_stack: 3 # only works if obs_type=pixels
 action_repeat: 1 # set to 2 for pixels
 discount: 0.99
 # train settings
-num_train_frames: 2000010
+num_train_frames: 2000010 # 6250000
 num_seed_frames: 4000 # encoder update after first 4000 steps?
 # eval
 eval_every_frames: 10000

@@ -11,7 +11,7 @@ from torch.utils.data import IterableDataset
 
 
 def episode_len(episode):
-    # subtract -1 because the dummy first transition
+    # subtract -1 because the dummy first transition # TODO: IMPORTANT: first is []? action is 0
     return next(iter(episode.values())).shape[0] - 1
 
 
@@ -26,7 +26,7 @@ def save_episode(episode, fn):
 def load_episode(fn):
     with fn.open('rb') as f:
         episode = np.load(f)
-        episode = {k: episode[k] for k in episode.keys()}
+        episode = {k: episode[k] for k in episode.keys()} # Q: why repack
         return episode
 
 
@@ -43,6 +43,7 @@ class ReplayBufferStorage:
         return self._num_transitions
 
     def add(self, time_step, meta):
+        # NOTE: turn all value to np.array; save _data_specs and _meta_specs from self._current_episode to episode, then self._store_episode
         for key, value in meta.items():
             self._current_episode[key].append(value)
         for spec in self._data_specs:
@@ -85,14 +86,14 @@ class ReplayBuffer(IterableDataset):
                  fetch_every, save_snapshot):
         self._storage = storage
         self._size = 0
-        self._max_size = max_size
+        self._max_size = max_size # NOTE: size to fetch TODO: set max size
         self._num_workers = max(1, num_workers)
         self._episode_fns = []
         self._episodes = dict()
-        self._nstep = nstep
+        self._nstep = nstep # TODO: skip nstep state and TD step
         self._discount = discount
         self._fetch_every = fetch_every
-        self._samples_since_last_fetch = fetch_every # NOTE:1000
+        self._samples_since_last_fetch = fetch_every # NOTE:fetch after 1000 samples
         self._save_snapshot = save_snapshot
 
     def _sample_episode(self):
@@ -127,17 +128,21 @@ class ReplayBuffer(IterableDataset):
             worker_id = torch.utils.data.get_worker_info().id
         except:
             worker_id = 0
+        # NOTE: reverse sort all episode file names
         eps_fns = sorted(self._storage._replay_dir.glob('*.npz'), reverse=True)
         fetched_size = 0
         for eps_fn in eps_fns:
             eps_idx, eps_len = [int(x) for x in eps_fn.stem.split('_')[1:]]
             if eps_idx % self._num_workers != worker_id:
                 continue
+            # NOTE: if saved or the fetched size is enough, no need to call _store_episode
             if eps_fn in self._episodes.keys():
                 break
+            # it
             if fetched_size + eps_len > self._max_size:
                 break
-            fetched_size += eps_len # TODO: order
+            fetched_size += eps_len # TODO: should be place after _store? 
+            # NOTE: Break only when unexpected load failure
             if not self._store_episode(eps_fn):
                 break
 
@@ -148,20 +153,21 @@ class ReplayBuffer(IterableDataset):
             traceback.print_exc()
         self._samples_since_last_fetch += 1
         episode = self._sample_episode()
-        # add +1 for the first dummy transition
+        # add +1 for the first dummy transition # NOTE: not choose last 'nstep' states TODO: may need to change
         idx = np.random.randint(0, episode_len(episode) - self._nstep + 1) + 1
         meta = []
+        # TODO: not fast, some redundant operations
         for spec in self._storage._meta_specs:
             meta.append(episode[spec.name][idx - 1])
-        obs = episode['observation'][idx - 1]
+        obs = episode['observation'][idx - 1] # TODO: check 
         action = episode['action'][idx]
         next_obs = episode['observation'][idx + self._nstep - 1]
-        reward = np.zeros_like(episode['reward'][idx])
-        discount = np.ones_like(episode['discount'][idx])
+        reward = np.zeros_like(episode['reward'][idx]) # NOTE: reward free = True
+        discount = np.ones_like(episode['discount'][idx]) # NOTE: 1
         for i in range(self._nstep):
             step_reward = episode['reward'][idx + i]
             reward += discount * step_reward
-            discount *= episode['discount'][idx + i] * self._discount
+            discount *= episode['discount'][idx + i] * self._discount # NOTE: 0.99
         return (obs, action, reward, discount, next_obs, *meta)
 
     def __iter__(self):
