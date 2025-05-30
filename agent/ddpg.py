@@ -66,6 +66,43 @@ class Actor(nn.Module):
 
         dist = utils.TruncatedNormal(mu, std)
         return dist
+    
+
+class BetaActor(nn.Module):
+    def __init__(self, obs_type, obs_dim, action_dim, feature_dim, hidden_dim):
+        super().__init__()
+
+        feature_dim = feature_dim if obs_type == 'pixels' else hidden_dim
+
+        self.trunk = nn.Sequential(nn.Linear(obs_dim, feature_dim), nn.ReLU())
+                                # nn.LayerNorm(feature_dim), nn.Tanh())
+        
+        self.action_dim = action_dim
+
+        policy_layers = []
+        policy_layers += [
+            nn.Linear(feature_dim, hidden_dim),
+            nn.ReLU(inplace=True)
+        ]
+        # add additional hidden layer for pixels
+        if obs_type == 'pixels':
+            policy_layers += [
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.ReLU(inplace=True)
+            ]
+        policy_layers += [nn.Linear(hidden_dim, action_dim*2), nn.Softplus()]
+
+        self.policy = nn.Sequential(*policy_layers)
+
+        self.apply(utils.weight_init)
+
+    def forward(self, obs, stddev=None):
+        h = self.trunk(obs)
+
+        c1c0 = self.policy(h)
+
+        return utils.ScaledBeta(c1c0[:, :self.action_dim], c1c0[:, self.action_dim:])
+
 
 
 class Critic(nn.Module):
@@ -169,6 +206,8 @@ class DDPGAgent:
 
         self.actor = Actor(obs_type, self.obs_dim, self.action_dim,
                            feature_dim, hidden_dim).to(device)
+        # self.actor = BetaActor(obs_type, self.obs_dim, self.action_dim,
+        #                    feature_dim, hidden_dim).to(device)
 
         self.critic = Critic(obs_type, self.obs_dim, self.action_dim,
                              feature_dim, hidden_dim).to(device)
@@ -225,7 +264,7 @@ class DDPGAgent:
         if eval_mode:
             action = dist.mean
         else:
-            action = dist.sample(clip=None) # NOTE: Clip is None and action range is +- 1
+            action = dist.sample(clip=None) # Q: why here None NOTE: Clip is None and action range is +- 1
             if step < self.num_expl_steps:
                 action.uniform_(-1.0, 1.0)
         return action.cpu().numpy()[0]
@@ -270,10 +309,10 @@ class DDPGAgent:
         Q1, Q2 = self.critic(obs, action)
         Q = torch.min(Q1, Q2)
 
-        actor_loss = -Q.mean() # why mean?
+        actor_loss = -Q.mean() # Q: why mean? -> batch 
 
         # optimize actor
-        self.actor_opt.zero_grad(set_to_none=True)
+        self.actor_opt.zero_grad(set_to_none=True) # Q: critic_opt have remaining grad, but will be zero_grad?
         actor_loss.backward()
         self.actor_opt.step()
 

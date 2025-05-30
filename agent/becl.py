@@ -65,10 +65,12 @@ class BECLAgent(DDPGAgent):
     def get_meta_specs(self):
         return specs.Array((self.skill_dim,), np.float32, 'skill'),
 
-    def init_meta(self):
+    def init_meta(self, skill_id=None):
         skill = np.zeros(self.skill_dim).astype(np.float32)
         if not self.reward_free:
             skill[self.skill] = 1.0
+        elif skill_id:
+            skill[skill_id] = 1.0
         else:
             skill[np.random.choice(self.skill_dim)] = 1.0
         meta = OrderedDict()
@@ -76,7 +78,7 @@ class BECLAgent(DDPGAgent):
         return meta
 
     def update_meta(self, meta, global_step, time_step, finetune=False):
-        # NOTE: skill changed every 50 steps. Should always be consistent with environment in this case 
+        # NOTE: skill changed every 50 steps. Should always be consistent with environment in this case
         if global_step % self.update_skill_every_step == 0:
             return self.init_meta()
         return meta
@@ -121,7 +123,7 @@ class BECLAgent(DDPGAgent):
 
         features = F.normalize(features, dim=1) #(b,c) # NOTE: normalize here
         similarity_matrix = torch.matmul(features, features.T) #(b,b)
-        
+
         # discard the main diagonal from both: labels and similarities matrix
         mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.device)
         labels = labels[~mask].view(labels.shape[0], -1)    #(b,b-1)
@@ -133,14 +135,13 @@ class BECLAgent(DDPGAgent):
 
         pick_one_positive_sample_idx = torch.argmax(labels, dim=-1, keepdim=True)
         pick_one_positive_sample_idx = torch.zeros_like(labels).scatter_(-1, pick_one_positive_sample_idx, 1)
-        
+
         positives = torch.sum(similarity_matrix * pick_one_positive_sample_idx, dim=-1, keepdim=True) #(b,1)
         negatives = torch.sum(similarity_matrix, dim=-1, keepdim=True)  #(b,1)
         eps = torch.as_tensor(1e-6)
         loss = -torch.log(positives / (negatives + eps) + eps) #(b,1)
 
         return loss
-
 
     def update(self, replay_iter, step):
         metrics = dict()

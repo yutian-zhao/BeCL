@@ -19,7 +19,10 @@ class Env(toy_maze.Env, gym.Env):
         )
 
     def reset(self, seed=None, options=None):
-        super().reset()
+        if options:
+            super().reset(**options)
+        else:
+            super().reset()
         if self.render_mode == "human":
             self.render()
         return self._get_obs(), self._get_info()

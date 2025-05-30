@@ -20,7 +20,11 @@ class DMCWrapper(gym.Wrapper):
         return space_to_spec(self.action_space, "action")
     
     def reset(self, seed=None, options=None):
-        obs, _ = super().reset()
+        if options:
+            obs, _ = super().reset(options=options)
+        else:
+            obs, _ = super().reset()
+
         return ExtendedTimeStep(observation=obs,
                                 step_type=StepType.FIRST,
                                 action=np.zeros(self.action_space.shape, dtype=self.action_space.dtype),
@@ -34,6 +38,10 @@ class DMCWrapper(gym.Wrapper):
                                 action=action,
                                 reward=reward,
                                 discount=1.0)
+    
+    def __getattr__(self, name):
+        if name != 'env':
+            return getattr(self.unwrapped, name)
 
 if __name__ == '__main__':
     env = DMCWrapper(gym.make('point_maze', n=4, maze_type='square_a'))

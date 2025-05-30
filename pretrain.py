@@ -22,6 +22,7 @@ from logger import Logger
 from replay_buffer import ReplayBufferStorage, make_replay_loader
 from video import TrainVideoRecorder, VideoRecorder
 from dmc_wrapper import DMCWrapper
+from collections import defaultdict
 import point_maze
 
 torch.backends.cudnn.benchmark = True
@@ -57,7 +58,7 @@ class Workspace:
         self.logger = Logger(self.work_dir,
                              use_tb=cfg.use_tb,
                              use_wandb=cfg.use_wandb)
-        # create envs # TODO: change # Q: any need to create two envs?
+        # create envs # Q: any need to create two envs?
         # task = PRIMAL_TASKS[self.cfg.domain]
         # self.train_env = dmc.make(task, cfg.obs_type, cfg.frame_stack,
         #                           cfg.action_repeat, cfg.seed)
@@ -81,9 +82,9 @@ class Workspace:
                       self.train_env.action_spec(),
                       specs.Array((1,), np.float32, 'reward'),
                       specs.Array((1,), np.float32, 'discount'))
-        # NOTE: (Array(shape=(24,), dtype=dtype('float32'), name='observation'), 
-        # BoundedArray(shape=(6,), dtype=dtype('float32'), name='action', minimum=-1.0, maximum=1.0), 
-        # Array(shape=(1,), dtype=dtype('float32'), name='reward'), 
+        # NOTE: (Array(shape=(24,), dtype=dtype('float32'), name='observation'),
+        # BoundedArray(shape=(6,), dtype=dtype('float32'), name='action', minimum=-1.0, maximum=1.0),
+        # Array(shape=(1,), dtype=dtype('float32'), name='reward'),
         # Array(shape=(1,), dtype=dtype('float32'), name='discount'))
         # NOTE: default reward is set to 1
 
@@ -98,6 +99,10 @@ class Workspace:
                                                 cfg.replay_buffer_num_workers,
                                                 False, cfg.nstep, cfg.discount)
         self._replay_iter = None
+
+        # create eval image folder
+        self.eval_img_dir = self.work_dir / 'eval_images'
+        self.eval_img_dir.mkdir(exist_ok=True)
 
         # create video recorders
         self.video_recorder = VideoRecorder(
@@ -134,23 +139,30 @@ class Workspace:
     def eval(self):
         step, episode, total_reward = 0, 0, 0
         eval_until_episode = utils.Until(self.cfg.num_eval_episodes)
-        meta = self.agent.init_meta()
+        # meta = self.agent.init_meta() # BUG:Skill not changed
+        rollouts_dict = defaultdict(list)
         while eval_until_episode(episode):
-            time_step = self.eval_env.reset()
+            time_step = self.eval_env.reset(options=dict(state=torch.tensor([0., -0.5])))
+            meta = self.agent.init_meta(skill_id=episode % self.agent.skill_dim)
+            rollout = [time_step.observation]
             self.video_recorder.init(self.eval_env, enabled=(episode == 0)) # NOTE: only record eps 0?
             while not time_step.last():
                 with torch.no_grad(), utils.eval_mode(self.agent):
                     action = self.agent.act(time_step.observation,
                                             meta,
                                             self.global_step,
-                                            eval_mode=True)
+                                            eval_mode=False) # CHANGE: to false for stochasity
                 time_step = self.eval_env.step(action)
                 self.video_recorder.record(self.eval_env)
+                rollout.append(time_step.observation)
                 total_reward += time_step.reward
                 step += 1
 
             episode += 1
             self.video_recorder.save(f'{self.global_frame}.mp4')
+            rollouts_dict[episode % self.agent.skill_dim].append(rollout)
+
+        utils.plot_all_skills(rollouts_dict, self.eval_env, save_path=self.eval_img_dir/f"{self.global_step}.png")
 
         with self.logger.log_and_dump_ctx(self.global_frame, ty='eval') as log:
             log('episode_reward', total_reward / episode) # NOTE: average
@@ -208,7 +220,8 @@ class Workspace:
                                 self.global_frame)
                 self.eval() # NOTE: call workspace eval function
 
-            # NOTE skill changed every self.update_skill_every_step steps.
+            # NOTE: skill changed every self.update_skill_every_step steps.
+            # redundant with init_meta
             # timestep not used
             meta = self.agent.update_meta(meta, self.global_step, time_step)
             # sample action
@@ -219,7 +232,7 @@ class Workspace:
                                         self.global_step,
                                         eval_mode=False) # eval_mode: deterministic or stochastic
 
-            # try to update the agent 
+            # try to update the agent
             # # NOTE: Update after first 4000 steps -> 2500
             if not seed_until_step(self.global_step):
                 metrics = self.agent.update(self.replay_iter, self.global_step)

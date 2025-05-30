@@ -10,7 +10,21 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 from torch import distributions as pyd
 from torch.distributions.utils import _standard_normal
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection 
 
+NUM_TRAJECTORIES = 20
+TRAJECTORY_KWARGS = dict(alpha=0.2, linewidth=2)
+
+SAVEFIG_KWARGS = dict(bbox_inches='tight', transparent=True)
+
+ENV_LIMS = dict(
+    square_a=dict(xlim=(-0.55, 4.55), ylim=(-4.55, 0.55), x=(-0.5, 4.5), y=(-4.5, 0.5)),
+    square_bottleneck=dict(xlim=(-0.55, 9.55), ylim=(-0.55, 9.55), x=(-0.5, 9.5), y=(-0.5, 9.5)),
+    square_corridor=dict(xlim=(-5.55, 5.55), ylim=(-0.55, 0.55), x=(-5.5, 5.5), y=(-0.5, 0.5)),
+    square_corridor2=dict(xlim=(-5.55, 5.55), ylim=(-0.55, 0.55), x=(-5.5, 5.5), y=(-0.5, 0.5)),
+    square_tree=dict(xlim=(-6.55, 6.55), ylim=(-6.55, 0.55), x=(-6.5, 6.5), y=(-6.5, 0.5))
+)
 
 class eval_mode:
     def __init__(self, *models):
@@ -26,7 +40,59 @@ class eval_mode:
         for model, state in zip(self.models, self.prev_states):
             model.train(state)
         return False
+    
+# skill_kwargs = dict(figsize=(5,5), reset_dict=dict(state=torch.tensor([0., -0.5])))
+# ax = plot_all_skills(None, cmap, agent=self.agent_model.agent, **skill_kwargs)  # NOTE: sample 20 trajs for each skill
+# plt.savefig(os.path.join(self.exp_dir, f'epoch_{self.curr_epoch}.png'))
 
+def choose_cmap(skill_n):
+    if skill_n <= 10:
+        cmap = plt.get_cmap('tab10')
+    elif 10 < skill_n <= 20:
+        cmap = plt.get_cmap('tab20')
+    else:
+        cmap = plt.get_cmap('plasma', skill_n)
+    return cmap
+
+def plot_all_skills(rollouts_dict, env, ax=None, save_path=None, figsize=(5, 5), **kwargs):
+    cmap = choose_cmap(len(rollouts_dict.keys()))
+
+    if ax is None:
+        return_ax = True
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+    else:
+        return_ax = False
+
+    env.maze.plot(ax)
+
+    for skill_id, rollouts in rollouts_dict.items():
+        lc = LineCollection(rollouts, label="Skill #{}".format(skill_id), color=cmap(skill_id), zorder=10, 
+        **TRAJECTORY_KWARGS)
+        ax.add_collection(lc)
+
+    ax.plot(rollouts[0][0][0], rollouts[0][0][1], marker='o', markersize=8, color='black', zorder=11)
+
+    config_subplot(ax, maze_type=env.maze_type, **kwargs)
+
+    if save_path:
+        plt.savefig(save_path)
+        plt.close(fig)
+    elif return_ax:
+        return ax
+    
+def config_subplot(ax, maze_type=None, title=None, extra_lim=0., fontsize=14):
+    if maze_type is not None:
+        env_config = ENV_LIMS[maze_type]
+        ax.set_xlim(env_config["xlim"][0] - extra_lim, env_config["xlim"][1] + extra_lim)
+        ax.set_ylim(env_config["ylim"][0] - extra_lim, env_config["ylim"][1] + extra_lim)
+
+    if title is not None:
+        ax.set_title(title, fontsize=fontsize)
+
+    ax.get_xaxis().set_visible(False)
+    ax.get_yaxis().set_visible(False)
+    for p in ["left", "right", "top", "bottom"]:
+        ax.spines[p].set_visible(False)
 
 def set_seed_everywhere(seed):
     torch.manual_seed(seed)
@@ -148,6 +214,28 @@ class TruncatedNormal(pyd.Normal):
             eps = torch.clamp(eps, -clip, clip) # NOTE: clipped normal distribution, don't want the noise added to the mean larger than 0.3
         x = self.loc + eps
         return self._clamp(x) # NOTE: clip to valid range
+    
+
+class ScaledBeta(pyd.Beta):
+    def __init__(self, c1, c0, validate_args=None):
+         super().__init__(c1, c0, validate_args=None)
+         self.c1 = c1 
+         self.c0 = c0 
+
+    @property
+    def mean(self):
+        return (self.c1 - 1) / (self.c0 + self.c1 - 2)
+
+    def sample(self, clip=None):
+        action_logit = super().sample()
+        log_probs = super().log_prob(action_logit)
+        return 2 * (action_logit - 0.5)
+
+    def log_prob(self, action):
+        action_logit = action/2 + 0.5
+        log_probs = super().log_prob(action_logit)
+        return log_probs
+
 
 
 class TanhTransform(pyd.transforms.Transform):
