@@ -211,30 +211,50 @@ class TruncatedNormal(pyd.Normal):
                                device=self.loc.device)
         eps *= self.scale
         if clip is not None:
-            eps = torch.clamp(eps, -clip, clip) # NOTE: clipped normal distribution, don't want the noise added to the mean larger than 0.3
+            eps = torch.clamp(eps, -clip, clip) # NOTE: clipped normal distribution, don't want the noise added to the mean larger than 0.3 -> NO, it's adding noise to mean
         x = self.loc + eps
         return self._clamp(x) # NOTE: clip to valid range
     
 
 class ScaledBeta(pyd.Beta):
-    def __init__(self, c1, c0, validate_args=None):
-         super().__init__(c1, c0, validate_args=None)
-         self.c1 = c1 
-         self.c0 = c0 
+    def __init__(self, c1, c0, scale, low=-1.0, high=1.0, eps=1e-6):
+        super().__init__(c1, c0, validate_args=False)
+        self.c1 = c1 
+        self.c0 = c0 
+        self.low = low
+        self.high = high
+        self.eps = eps
+        self.scale = scale
+
+    def _clamp(self, x):
+        # NOTE: a custom differentiable clamp
+        clamped_x = torch.clamp(x, self.low + self.eps, self.high - self.eps)
+        x = x - x.detach() + clamped_x.detach()
+        return x
 
     @property
-    def mean(self):
+    def mean(self): # NOTE: actually return the mode, but named as mean for consistency
         return (self.c1 - 1) / (self.c0 + self.c1 - 2)
 
-    def sample(self, clip=None):
-        action_logit = super().sample()
-        log_probs = super().log_prob(action_logit)
-        return 2 * (action_logit - 0.5)
+    def sample(self, clip=None, sample_shape=torch.Size()):
+        shape = self._extended_shape(sample_shape)
+        eps = _standard_normal(shape,
+                               dtype=self.c1.dtype,
+                               device=self.c1.device)
+        eps *= self.scale
+        if clip is not None:
+            eps = torch.clamp(eps, -clip, clip)
+
+        x = (self.high-self.low) * self.mean + self.low + eps # NOTE: this transform should base on high and low
+        return self._clamp(x)
 
     def log_prob(self, action):
         action_logit = action/2 + 0.5
-        log_probs = super().log_prob(action_logit)
+        log_probs = super().log_prob(action_logit) - torch.log(torch.tensor(2.0, device=self.c1.device))
         return log_probs
+    
+    def entropy(self):
+        return super().entropy() - torch.log(torch.tensor(2.0, device=self.c1.device))
 
 
 

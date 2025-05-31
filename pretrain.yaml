@@ -15,7 +15,7 @@ num_train_frames: 2000010 # 6250000
 num_seed_frames: 4000 # encoder update after first 4000 steps?
 # eval
 eval_every_frames: 10000
-num_eval_episodes: 160 # 10
+num_eval_episodes: 320 # 10
 # snapshot
 snapshots: [100000, 500000, 1000000, 2000000]
 snapshot_dir: ./models/${obs_type}/${domain}/${agent.name}/${seed} # ../../.

@@ -96,12 +96,12 @@ class BetaActor(nn.Module):
 
         self.apply(utils.weight_init)
 
-    def forward(self, obs, stddev=None):
+    def forward(self, obs, std):
         h = self.trunk(obs)
 
-        c1c0 = self.policy(h)
+        c1c0 = self.policy(h) + 1.05 # NOTE: to make large than 1
 
-        return utils.ScaledBeta(c1c0[:, :self.action_dim], c1c0[:, self.action_dim:])
+        return utils.ScaledBeta(c1c0[:, :self.action_dim], c1c0[:, self.action_dim:], std)
 
 
 
